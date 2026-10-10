@@ -1,0 +1,34 @@
+# Auto-label PRs based on changed file paths
+# Used by the pr-checks.yml workflow
+
+frontend:
+  - changed-files:
+      - any-glob-to-any-file: "frontend/**"
+
+backend:
+  - changed-files:
+      - any-glob-to-any-file: "backend/**"
+
+infra:
+  - changed-files:
+      - any-glob-to-any-file: "infra/**"
+
+ci/cd:
+  - changed-files:
+      - any-glob-to-any-file: ".github/**"
+
+crypto:
+  - changed-files:
+      - any-glob-to-any-file: "frontend/src/crypto/**"
+      - any-glob-to-any-file: "backend/internal/crypto/**"
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file: "*.md"
+      - any-glob-to-any-file: "docs/**"
+
+database:
+  - changed-files:
+      - any-glob-to-any-file: "scripts/schema.sql"
+      - any-glob-to-any-file: "scripts/seed.sql"
+      - any-glob-to-any-file: "backend/internal/db/**"

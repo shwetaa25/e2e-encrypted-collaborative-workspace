@@ -1,0 +1,122 @@
+# k8s/postgres/statefulset.yml
+# ─────────────────────────────────────────────────────────
+# PostgreSQL as a StatefulSet with a PersistentVolumeClaim.
+# StatefulSet guarantees stable network identity and
+# ordered pod creation — important for a database.
+# ─────────────────────────────────────────────────────────
+
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: encrypted-workspace
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app: postgres
+  template:
+    metadata:
+      labels:
+        app: postgres
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9187"    # postgres_exporter port
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_DB
+              value: encryptedws
+            - name: POSTGRES_USER
+              value: postgres
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secrets
+                  key: postgres-password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "postgres"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+
+        # Sidecar: postgres_exporter exposes metrics for Prometheus
+        - name: postgres-exporter
+          image: prometheuscommunity/postgres-exporter:v0.15.0
+          ports:
+            - containerPort: 9187
+          env:
+            - name: DATA_SOURCE_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secrets
+                  key: database-url
+          resources:
+            requests:
+              memory: "32Mi"
+              cpu: "20m"
+            limits:
+              memory: "64Mi"
+              cpu: "100m"
+
+      volumes:
+        - name: init-scripts
+          configMap:
+            name: postgres-init
+
+  # PVC template — each pod gets its own persistent disk
+  volumeClaimTemplates:
+    - metadata:
+        name: postgres-data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        storageClassName: standard
+        resources:
+          requests:
+            storage: 10Gi
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: encrypted-workspace
+spec:
+  selector:
+    app: postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+  type: ClusterIP    # Not exposed externally — backend only
+
+---
+# Init scripts loaded from the repo
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: encrypted-workspace
+data:
+  00_schema.sql: |
+    -- Loaded from scripts/schema.sql at deploy time
+    -- In production, use Alembic migrations instead
+    SELECT 'Schema applied';

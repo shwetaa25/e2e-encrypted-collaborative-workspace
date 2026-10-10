@@ -1,0 +1,49 @@
+# k8s/namespace/namespace.yml
+# ─────────────────────────────────────────────────────────
+# All project resources live in this namespace.
+# Apply first: kubectl apply -f k8s/namespace/
+# ─────────────────────────────────────────────────────────
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: encrypted-workspace
+  labels:
+    app.kubernetes.io/name: encrypted-workspace
+    app.kubernetes.io/managed-by: argocd
+
+---
+# Service account for the backend pod
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: backend-sa
+  namespace: encrypted-workspace
+
+---
+# Role: backend can only read its own secrets
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: backend-role
+  namespace: encrypted-workspace
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
+    resourceNames: ["backend-secrets"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: backend-rolebinding
+  namespace: encrypted-workspace
+subjects:
+  - kind: ServiceAccount
+    name: backend-sa
+    namespace: encrypted-workspace
+roleRef:
+  kind: Role
+  name: backend-role
+  apiGroup: rbac.authorization.k8s.io

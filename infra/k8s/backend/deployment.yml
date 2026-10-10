@@ -1,0 +1,159 @@
+# k8s/backend/deployment.yml
+# ─────────────────────────────────────────────────────────
+# Backend API — Deployment + Service + HorizontalPodAutoscaler
+# Image tag is updated automatically by the CD pipeline.
+# ─────────────────────────────────────────────────────────
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: encrypted-workspace
+  labels:
+    app: backend
+    version: "latest"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0        # Zero-downtime rolling deploy
+  template:
+    metadata:
+      labels:
+        app: backend
+      annotations:
+        # Prometheus auto-scrape
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+    spec:
+      serviceAccountName: backend-sa
+      # Don't mount default service account token
+      automountServiceAccountToken: false
+
+      containers:
+        - name: backend
+          # CD pipeline updates this tag on every deploy
+          image: ghcr.io/YOUR_USERNAME/e2e-encrypted-workspace/backend:latest
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+
+          # Environment from Secret + ConfigMap
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secrets
+                  key: database-url
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secrets
+                  key: jwt-secret
+            - name: AUDIT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secrets
+                  key: audit-secret
+          envFrom:
+            - configMapRef:
+                name: backend-config
+
+          # Resource limits
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+
+          # Health checks
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 20
+            failureThreshold: 3
+
+          # Security: read-only filesystem
+          securityContext:
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+
+      # Spread pods across nodes for HA
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: backend
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: encrypted-workspace
+  labels:
+    app: backend
+spec:
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP
+
+---
+# HorizontalPodAutoscaler — scale from 2 to 8 pods
+# based on CPU and memory usage
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: backend-hpa
+  namespace: encrypted-workspace
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: backend
+  minReplicas: 2
+  maxReplicas: 8
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 70
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80

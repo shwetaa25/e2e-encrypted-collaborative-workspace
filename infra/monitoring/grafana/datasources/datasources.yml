@@ -1,0 +1,14 @@
+# grafana/datasources/datasources.yml
+# Auto-provisions Prometheus as a datasource on first boot
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    jsonData:
+      timeInterval: "15s"
+      httpMethod: GET

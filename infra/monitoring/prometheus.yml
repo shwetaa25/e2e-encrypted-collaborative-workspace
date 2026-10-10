@@ -1,0 +1,59 @@
+# prometheus/prometheus.yml
+# ─────────────────────────────────────────────────────────
+# Prometheus configuration.
+# Scrapes: backend API, PostgreSQL exporter, NATS,
+#          Kubernetes nodes, and itself.
+#
+# Key metrics for the evaluation dossier:
+#   - http_request_duration_seconds   (API latency)
+#   - crypto_operation_duration_*     (encryption overhead)
+#   - search_query_duration_*         (SSE vs plaintext comparison)
+#   - document_key_rotations_total    (revoke operations)
+# ─────────────────────────────────────────────────────────
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  scrape_timeout: 10s
+  external_labels:
+    project: "e2e-encrypted-workspace"
+    environment: "production"
+
+rule_files:
+  - "/etc/prometheus/alerts/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: []
+
+scrape_configs:
+
+  # ── Backend FastAPI (/metrics via prometheus-fastapi-instrumentator)
+  - job_name: "backend"
+    static_configs:
+      - targets: ["backend:8080"]
+    metrics_path: "/metrics"
+    scrape_interval: 10s
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+        replacement: "backend-api"
+
+  # ── PostgreSQL (via postgres_exporter sidecar)
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres:9187"]
+    metrics_path: "/metrics"
+    scrape_interval: 30s
+
+  # ── NATS message broker
+  - job_name: "nats"
+    static_configs:
+      - targets: ["nats:7777"]
+    metrics_path: "/metrics"
+
+  # ── Prometheus itself
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]

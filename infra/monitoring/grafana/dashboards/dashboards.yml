@@ -1,0 +1,13 @@
+# grafana/dashboards/dashboards.yml
+apiVersion: 1
+
+providers:
+  - name: "encrypted-workspace"
+    orgId: 1
+    folder: "E2E Encrypted Workspace"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

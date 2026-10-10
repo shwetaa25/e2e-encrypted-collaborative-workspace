@@ -1,0 +1,51 @@
+# ── Secrets (NEVER commit these) ──────────────
+.env
+.env.local
+.env.production
+*.pem
+*.key
+*.crt
+secrets/
+
+# ── Node / Frontend ────────────────────────────
+node_modules/
+frontend/dist/
+frontend/build/
+frontend/.vite/
+*.log
+npm-debug.log*
+
+# ── Go / Backend ───────────────────────────────
+backend/bin/
+backend/tmp/
+*.exe
+*.test
+coverage.out
+coverage.html
+
+# ── Docker ─────────────────────────────────────
+.docker/
+
+# ── IDE ────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ── Testing ────────────────────────────────────
+test-results/
+playwright-report/
+coverage/
+
+# ── Terraform state (use remote backend) ───────
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.backup
+infra/terraform/.terraform.lock.hcl
+
+# ── Build artifacts ────────────────────────────
+dist/
+build/
+*.tar.gz

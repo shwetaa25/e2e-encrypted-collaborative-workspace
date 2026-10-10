@@ -1,0 +1,305 @@
+{
+  "uid": "encrypted-workspace-main",
+  "title": "E2E Encrypted Workspace — Operations & Crypto Metrics",
+  "description": "API performance, encryption overhead, key operations, SSE search latency, and security metrics",
+  "tags": ["encrypted-workspace", "crypto", "evaluation"],
+  "timezone": "browser",
+  "refresh": "10s",
+  "time": { "from": "now-1h", "to": "now" },
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "🔒 Encryption Status",
+      "description": "System-wide encryption health — are all crypto operations succeeding?",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "red", "value": null },
+              { "color": "green", "value": 99 }
+            ]
+          },
+          "unit": "percent",
+          "mappings": []
+        }
+      },
+      "targets": [{
+        "expr": "100 * (1 - sum(rate(crypto_operation_errors_total[5m])) / sum(rate(crypto_operations_total[5m])))",
+        "legendFormat": "Crypto success rate"
+      }]
+    },
+
+    {
+      "id": 2,
+      "title": "API Request Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 0, "w": 9, "h": 4 },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "color": { "mode": "palette-classic" } }
+      },
+      "targets": [{
+        "expr": "sum by (method, handler) (rate(http_requests_total[1m]))",
+        "legendFormat": "{{method}} {{handler}}"
+      }]
+    },
+
+    {
+      "id": 3,
+      "title": "API Error Rate",
+      "type": "timeseries",
+      "gridPos": { "x": 15, "y": 0, "w": 9, "h": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 1 },
+              { "color": "red", "value": 5 }
+            ]
+          }
+        }
+      },
+      "targets": [{
+        "expr": "100 * sum(rate(http_requests_total{status=~'5..'}[1m])) / sum(rate(http_requests_total[1m]))",
+        "legendFormat": "Error rate %"
+      }]
+    },
+
+    {
+      "id": 4,
+      "title": "📊 API Latency Percentiles (p50 / p95 / p99)",
+      "description": "Request latency breakdown. The p95 target is < 500ms for encrypted endpoints.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket[5m])))",
+          "legendFormat": "p99"
+        }
+      ]
+    },
+
+    {
+      "id": 5,
+      "title": "🔐 Encryption Overhead — Document Operations",
+      "description": "Time spent on AES-GCM encryption/decryption per document operation. Evaluation target: p95 < 500ms for documents up to 1MB.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "s" },
+        "overrides": [
+          { "matcher": { "id": "byName", "options": "p95 threshold" },
+            "properties": [{ "id": "color", "value": { "fixedColor": "red", "mode": "fixed" } }]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(crypto_operation_duration_seconds_bucket{operation='document_encrypt'}[5m]))",
+          "legendFormat": "encrypt p50"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(crypto_operation_duration_seconds_bucket{operation='document_encrypt'}[5m]))",
+          "legendFormat": "encrypt p95"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(crypto_operation_duration_seconds_bucket{operation='document_decrypt'}[5m]))",
+          "legendFormat": "decrypt p95"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(crypto_operation_duration_seconds_bucket{operation='key_wrap'}[5m]))",
+          "legendFormat": "key wrap p95"
+        }
+      ]
+    },
+
+    {
+      "id": 6,
+      "title": "🔍 SSE Search Latency vs Plaintext Baseline",
+      "description": "Privacy-preserving search (SSE/HMAC tokens) vs hypothetical plaintext search. Shows the privacy-utility tradeoff. Evaluation target: SSE < 2s for 100-doc index.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(search_query_duration_seconds_bucket{type='sse'}[5m]))",
+          "legendFormat": "SSE search p95"
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(search_query_duration_seconds_bucket{type='plaintext_baseline'}[5m]))",
+          "legendFormat": "Plaintext baseline p95"
+        },
+        {
+          "expr": "histogram_quantile(0.50, rate(search_query_duration_seconds_bucket{type='sse'}[5m]))",
+          "legendFormat": "SSE search p50"
+        }
+      ]
+    },
+
+    {
+      "id": 7,
+      "title": "🔑 Key Operations",
+      "description": "RSA key wrap/unwrap operations and key rotations (revoke events). High key rotation count = active revoke use.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 10, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" }
+      },
+      "targets": [
+        {
+          "expr": "rate(crypto_operations_total{operation='key_wrap'}[5m])",
+          "legendFormat": "Key wraps (shares)"
+        },
+        {
+          "expr": "rate(crypto_operations_total{operation='key_unwrap'}[5m])",
+          "legendFormat": "Key unwraps (opens)"
+        },
+        {
+          "expr": "rate(document_key_rotations_total[5m])",
+          "legendFormat": "Key rotations (revokes)"
+        }
+      ]
+    },
+
+    {
+      "id": 8,
+      "title": "📋 Audit Log — Events per Hour",
+      "description": "Tamper-evident audit chain write rate by action type. Used to verify audit coverage during evaluation.",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" }
+      },
+      "targets": [{
+        "expr": "sum by (action_type) (rate(audit_entries_written_total[5m]))",
+        "legendFormat": "{{action_type}}"
+      }]
+    },
+
+    {
+      "id": 9,
+      "title": "💾 Database — Query Latency",
+      "description": "PostgreSQL query latency. High values under load test = database bottleneck.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 16, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, rate(pg_stat_statements_mean_exec_time_seconds_bucket[5m]))",
+          "legendFormat": "Query p95"
+        },
+        {
+          "expr": "pg_stat_activity_count",
+          "legendFormat": "Active connections"
+        }
+      ]
+    },
+
+    {
+      "id": 10,
+      "title": "🧪 Load Test Results — Concurrent Users",
+      "description": "Tracks requests/s and error rate during load testing (k6). Run: k6 run scripts/load_test.js",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 22, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_requests_total[30s]))",
+          "legendFormat": "Total RPS"
+        },
+        {
+          "expr": "sum(rate(http_requests_total{status=~'5..'}[30s]))",
+          "legendFormat": "Error RPS"
+        }
+      ]
+    },
+
+    {
+      "id": 11,
+      "title": "🛡️ Security Events",
+      "description": "Auth failures, invalid token attempts, and rejected requests. Spikes indicate attack attempts.",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 22, "w": 12, "h": 6 },
+      "fieldConfig": {
+        "defaults": { "unit": "ops" }
+      },
+      "targets": [
+        {
+          "expr": "rate(http_requests_total{status='401'}[5m])",
+          "legendFormat": "401 Unauthorized"
+        },
+        {
+          "expr": "rate(http_requests_total{status='403'}[5m])",
+          "legendFormat": "403 Forbidden"
+        },
+        {
+          "expr": "rate(http_requests_total{status='422'}[5m])",
+          "legendFormat": "422 Validation errors"
+        }
+      ]
+    },
+
+    {
+      "id": 12,
+      "title": "📈 Encryption Overhead Summary (Evaluation Evidence)",
+      "description": "Summary table for the evaluation dossier. Shows measured overhead vs baseline and vs acceptance thresholds.",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 28, "w": 24, "h": 6 },
+      "options": {
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, rate(crypto_operation_duration_seconds_bucket{operation='document_encrypt'}[5m])) * 1000",
+          "legendFormat": "Document Encrypt — p50 (ms)",
+          "instant": true
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(crypto_operation_duration_seconds_bucket{operation='document_encrypt'}[5m])) * 1000",
+          "legendFormat": "Document Encrypt — p95 (ms)",
+          "instant": true
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(search_query_duration_seconds_bucket{type='sse'}[5m])) * 1000",
+          "legendFormat": "SSE Search — p95 (ms)",
+          "instant": true
+        },
+        {
+          "expr": "histogram_quantile(0.95, rate(crypto_operation_duration_seconds_bucket{operation='key_rotation'}[5m])) * 1000",
+          "legendFormat": "Key Rotation — p95 (ms)",
+          "instant": true
+        }
+      ]
+    }
+
+  ]
+}
