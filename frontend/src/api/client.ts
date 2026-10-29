@@ -160,8 +160,8 @@ export const documentsApi = {
 };
 
 export const searchApi = {
-  search: (tokens: string[], mode: "and" | "or", token: string) =>
-    request<SearchResultItem[]>("/search", { method: "POST", body: JSON.stringify({ tokens, mode }) }, token),
+  search: (documentTokens: Record<string, string[]>, mode: "and" | "or", token: string) =>
+    request<SearchResultItem[]>("/search", { method: "POST", body: JSON.stringify({ document_tokens: documentTokens, mode }) }, token),
 };
 
 export const workspacesApi = {

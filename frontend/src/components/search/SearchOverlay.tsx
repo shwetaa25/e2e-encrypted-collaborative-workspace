@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { searchApi, documentsApi } from "../../api/client";
-import { useSessionStore, useDocCache } from "../../store/sessionStore";
+import { useSessionStore } from "../../store/sessionStore";
 import { deriveSearchKey, buildSearchTokens, unwrapDocumentKey, decryptField } from "../../crypto";
 
 interface SearchResult {
@@ -19,7 +19,6 @@ interface Props {
 
 export function SearchOverlay({ onClose, onOpenDoc }: Props) {
   const { token, privateKey } = useSessionStore();
-  const { docs } = useDocCache();
   const [query, setQuery] = useState("");
   const [tokens, setTokens] = useState<string[]>([]);
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -44,30 +43,36 @@ export function SearchOverlay({ onClose, onOpenDoc }: Props) {
     setResults([]);
 
     try {
-      // Build SSE tokens from any cached doc key (all share the same search key derivation)
-      const cachedDocs = Object.values(docs);
-      let searchTokens: string[] = [];
+      // Every document has its own AES key, so its search index has its own
+      // derived HMAC key. Build query tokens per accessible document; never
+      // reuse one document's key for another document and never use dummy tokens.
+      const accessibleDocs = await documentsApi.list(token);
+      const documentTokens: Record<string, string[]> = {};
+      let previewTokens: string[] = [];
 
-      if (cachedDocs.length > 0) {
-        // Derive search key from the first available document key
-        const searchKey = await deriveSearchKey(cachedDocs[0].documentKey);
-        searchTokens = await buildSearchTokens(query, searchKey);
-      } else {
-        // No cached docs — generate placeholder tokens to show the SSE concept
-        const dummyKey = await window.crypto.subtle.generateKey({ name: "HMAC", hash: "SHA-256" }, true, ["sign"]);
-        searchTokens = await buildSearchTokens(query, dummyKey);
+      for (const item of accessibleDocs) {
+        try {
+          const documentKey = await unwrapDocumentKey(item.wrapped_key, privateKey);
+          const searchKey = await deriveSearchKey(documentKey);
+          const perDocumentTokens = await buildSearchTokens(query, searchKey);
+          if (perDocumentTokens.length > 0) {
+            documentTokens[item.id] = perDocumentTokens;
+            if (previewTokens.length === 0) previewTokens = perDocumentTokens;
+          }
+        } catch (keyError) {
+          // Skip documents whose keys cannot be unwrapped by this user.
+          console.warn("Could not prepare search tokens for a document", item.id, keyError);
+        }
       }
 
-      setTokens(searchTokens);
-
-      if (searchTokens.length === 0) {
+      setTokens(previewTokens);
+      if (Object.keys(documentTokens).length === 0) {
         setSearched(true);
-        setSearching(false);
         return;
       }
 
-      // Send tokens (never keywords) to server
-      const raw = await searchApi.search(searchTokens, mode, token);
+      // Send document-specific HMAC tokens (never the actual keywords) to server.
+      const raw = await searchApi.search(documentTokens, mode, token);
 
       // Decrypt titles for results we have keys for
       const enriched = await Promise.all(
@@ -133,7 +138,7 @@ export function SearchOverlay({ onClose, onOpenDoc }: Props) {
           <div className="search-token-row">
             <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 4, display: "flex", alignItems: "center", gap: 6 }}>
               <span className="enc-badge" style={{ fontSize: 10 }}>🔒 SSE</span>
-              <span>Tokens sent to server — never the actual keywords</span>
+              <span>Example per-document HMAC tokens — raw keywords stay in browser</span>
             </div>
             {tokens.map((t, i) => (
               <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 8, marginBottom: 3 }}>
@@ -144,7 +149,7 @@ export function SearchOverlay({ onClose, onOpenDoc }: Props) {
               </div>
             ))}
             <div style={{ fontSize: 10, color: "var(--text-muted)", marginTop: 5, borderTop: "1px solid var(--border)", paddingTop: 5 }}>
-              Server matched these HMAC-SHA256 hashes — it never learned what you searched for.
+              Server matches document-specific HMAC-SHA256 tokens, not the raw search words.
             </div>
           </div>
         )}

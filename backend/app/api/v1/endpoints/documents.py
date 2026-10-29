@@ -21,7 +21,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, delete, and_, update
+from sqlalchemy import select, delete, and_, or_, case, update
 
 from app.db.database import get_db
 from app.models.models import (
@@ -798,8 +798,8 @@ search_router = APIRouter(tags=["Search"])
     description="""
     Searches encrypted documents using Searchable Symmetric Encryption.
 
-    The client sends HMAC tokens (not keywords) and the server matches
-    them against the encrypted index. The server learns:
+    The client sends per-document HMAC tokens (not keywords) and the server matches
+    each token set only against that document's encrypted index. The server learns:
     - Which documents matched (document IDs)
     - How many tokens matched
 
@@ -816,32 +816,40 @@ async def search_documents(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> list[SearchResultItem]:
-    # Find documents where the user has a key AND tokens match
-    if body.mode == "and":
-        # AND: document must have ALL tokens in its index
-        # Use subquery: count distinct matching tokens per document
-        # and require count == len(tokens)
-        from sqlalchemy import func as sqlfunc
+    # Each document uses a distinct AES key, so query HMACs are document-specific.
+    # Only compare a document's index with the tokens generated for that document.
+    from sqlalchemy import func as sqlfunc
 
-        subq = (
-            select(
-                SearchIndex.document_id,
-                sqlfunc.count(SearchIndex.keyword_token.distinct()).label("match_count")
-            )
-            .where(SearchIndex.keyword_token.in_(body.tokens))
-            .group_by(SearchIndex.document_id)
-            .having(sqlfunc.count(SearchIndex.keyword_token.distinct()) == len(body.tokens))
-            .subquery()
+    valid_tokens = {
+        document_id: list(dict.fromkeys(tokens))
+        for document_id, tokens in body.document_tokens.items()
+        if tokens
+    }
+    if not valid_tokens:
+        return []
+
+    match_conditions = [
+        and_(SearchIndex.document_id == document_id,
+             SearchIndex.keyword_token.in_(tokens))
+        for document_id, tokens in valid_tokens.items()
+    ]
+    matching = select(SearchIndex.document_id.label("document_id")).where(
+        or_(*match_conditions)
+    ).group_by(SearchIndex.document_id)
+
+    if body.mode == "and":
+        expected_matches = case(
+            *[(SearchIndex.document_id == document_id, len(tokens))
+              for document_id, tokens in valid_tokens.items()],
+            else_=0,
+        )
+        matching = matching.having(
+            sqlfunc.count(SearchIndex.keyword_token.distinct()) == expected_matches
         )
     else:
-        # OR: any token match is enough
-        subq = (
-            select(SearchIndex.document_id.distinct().label("document_id"))
-            .where(SearchIndex.keyword_token.in_(body.tokens))
-            .subquery()
-        )
+        matching = matching.having(sqlfunc.count(SearchIndex.keyword_token.distinct()) >= 1)
 
-    # Join with document_keys to ensure user has access
+    subq = matching.subquery()
     result = await db.execute(
         select(Document, DocumentKey)
         .join(subq, Document.id == subq.c.document_id)
@@ -858,7 +866,7 @@ async def search_documents(
         db=db,
         action_type="search.performed",
         user_id=current_user.id,
-        metadata={"token_count": len(body.tokens), "mode": body.mode},
+        metadata={"document_count": len(valid_tokens), "mode": body.mode},
     )
     await db.commit()
 

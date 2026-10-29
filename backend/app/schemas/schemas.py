@@ -349,17 +349,21 @@ class SearchIndexEntry(BaseModel):
 class SearchRequest(BaseModel):
     """
     Privacy-preserving search query.
-    Client sends HMAC tokens — never the actual keywords.
+    The browser sends HMAC tokens per document because each document has
+    its own encryption key. Raw keywords are never sent to the server.
     """
-    tokens: list[str] = Field(min_length=1, max_length=10)
+    document_tokens: dict[UUID, list[str]] = Field(min_length=1, max_length=200)
     mode: str = Field(default="and", description="'and' = all tokens match, 'or' = any token matches")
 
-    @field_validator("tokens")
+    @field_validator("document_tokens")
     @classmethod
-    def validate_tokens(cls, v: list[str]) -> list[str]:
-        for token in v:
-            if not re.match(r"^[a-f0-9]{64}$", token):
-                raise ValueError("Each token must be a 64-character hex string")
+    def validate_document_tokens(cls, v: dict[UUID, list[str]]) -> dict[UUID, list[str]]:
+        for document_id, tokens in v.items():
+            if not tokens or len(tokens) > 10:
+                raise ValueError("Each document must have between 1 and 10 search tokens")
+            for token in tokens:
+                if not re.match(r"^[a-f0-9]{64}$", token):
+                    raise ValueError("Each token must be a 64-character hex string")
         return v
 
 

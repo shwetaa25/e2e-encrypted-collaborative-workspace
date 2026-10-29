@@ -65,10 +65,11 @@ services:
     networks:
       - app-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U postgres -d encryptedws"]
       interval: 5s
       timeout: 5s
       retries: 5
+      start_period: 60s
 
   # ── NATS (real-time sync message broker) ───
   nats:

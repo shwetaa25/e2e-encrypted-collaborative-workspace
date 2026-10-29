@@ -176,7 +176,12 @@ export async function buildSearchIndex(content: string, docId: string, searchKey
 }
 
 export async function buildSearchTokens(query: string, searchKey: CryptoKey): Promise<string[]> {
-  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length >= 3);
+  const stopwords = new Set(["the","and","or","in","on","at","to","for","of","a","an","is","it"]);
+  const words = [...new Set(
+    query.toLowerCase().split(/[\s.,;:!?\'"()\[\]{}\-/\\]+/)
+      .map((w) => w.replace(/[^a-z0-9]/g, ""))
+      .filter((w) => w.length >= 3 && !stopwords.has(w))
+  )];
   return Promise.all(words.map((w) => keywordToToken(w, searchKey)));
 }
 

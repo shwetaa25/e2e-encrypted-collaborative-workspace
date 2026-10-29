@@ -202,3 +202,7 @@ Existing databases: on start (development) the backend adds the new columns/tabl
 - **Workspace owners** now have a visible 🗑 button in the sidebar to delete their own workspace (also still available in the members dialog).
 - **Save button** in the top bar with an "Unsaved changes / All changes saved" indicator, **Ctrl+S**, a browser warning when closing the tab with unsaved edits, and an **Auto-save** checkbox (off by default; remembered per browser).
 - All deletions are recorded in the tamper-evident audit chain.
+
+## Troubleshooting Docker Compose startup
+
+On a fresh run, PostgreSQL executes the schema and seed scripts before it is ready. The Compose healthcheck allows 60 seconds for this initialization and checks the `encryptedws` database. If another service already failed its dependency check, start the stack again with `docker compose up -d` and inspect PostgreSQL startup details with `docker compose logs postgres`.
